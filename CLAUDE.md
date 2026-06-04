@@ -71,16 +71,20 @@ The data uplink is outbound-only to TomTom; nothing needs to be exposed inbound.
   TinyGPSPlus parsing can live on either side; default to parsing on the RP2040 and
   shipping clean lat/lng/CoG.
 
-Proposed `src/` layout:
+Repo layout (two PlatformIO projects — GPS is on the RP2040, see `docs/hardware/`):
 
 ```
-src/
-  config/        # wifi creds, API key, thresholds, brand filters
-  gps/           # NMEA parse: position + course-over-ground (CoG)
-  poi_client/    # IFuelProvider interface + TomTomProvider impl
-  geo/           # haversine distance, bearing, heading filter
-  ui/            # LVGL list view + station detail w/ QR
-  alerts/        # proximity / low-fuel buzzer logic
+firmware/
+  PROTOCOL.md          # RP2040 -> ESP32-S3 "FIX,..." line protocol
+  rp2040/              # GPS reader: NMEA (UART1) -> FIX lines (UART0) [built, verified]
+  esp32-s3/src/
+    config/            # config.example.h -> config.h (git-ignored): creds, key, thresholds
+    gps/               # gps_link: parse FIX lines from the RP2040
+    poi_client/        # IFuelProvider interface + TomTomProvider impl
+    geo/               # haversine distance, bearing, heading filter
+    ui/                # LVGL list view + station detail w/ QR  [STUB: pending panel driver]
+    alerts/            # proximity / low-fuel buzzer decision (buzzer is on the RP2040)
+tools/rp2040-gps-probe/  # throwaway diagnostic used to confirm GPS wiring
 ```
 
 ---
