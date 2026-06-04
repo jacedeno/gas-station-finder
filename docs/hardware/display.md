@@ -68,13 +68,28 @@ the screen coexist cleanly.
   LVGL's `flush_cb` blits into the RGB framebuffer (PSRAM-backed; the device has 8 MB).
 - **Touch driver:** an FT5x06 I²C reader feeding LVGL's `indev` pointer device.
 
-## Bring-up checklist (next coding task)
+## ✅ Verified-working driver config (2026-06-03)
 
-1. PCA9535 I²C driver: set CS/RST lines.
-2. ST7701S init sequence over GPIO41/48 SPI + PCA9535 CS/RST.
-3. esp_lcd RGB panel config with the pins/timing above; framebuffer in PSRAM.
-4. LVGL 8.4 `lv_conf.h` (enable `LV_USE_QRCODE`); wire `flush_cb` + FT5x06 `indev`.
-5. Backlight on (GPIO45 PWM).
+The panel was brought up cleanly (no striping, no flicker) with `tools/esp32-display-test/`.
+The decisive findings:
+
+- **Use arduino-esp32 core 3.x** (pioarduino). The official `espressif32` 6.x ships
+  core 2.0.17, whose Arduino_GFX build has **no RGB bounce buffer** → unavoidable
+  striping. → The ESP32-S3 app must migrate to core 3.x for the UI.
+- **Driver:** `GFX Library for Arduino` 1.4.x + `hideakitai/PCA95x5`, `Arduino_RGB_Display`
+  + `Arduino_ESP32RGBPanel` with `st7701_type1_init_operations`.
+- **Timing that works:** hfp=10, hpw=8, hbp=50; vfp=10, vpw=8, vbp=20;
+  `pclk_active_neg=1`; **PCLK 16 MHz** (~56 Hz); **`bounce_buffer_size_px = 480*10`**
+  (the key fix — smooths PSRAM framebuffer reads).
+- **CS/RST via PCA9535:** P04=CS (held low for init), P05=RST (pulse); I²C SDA=39/SCL=40.
+- **Backlight:** GPIO45 high.
+
+## Remaining bring-up (LVGL)
+
+1. ✅ PCA9535 CS/RST + ST7701S init + RGB panel + bounce buffer — done (see above).
+2. LVGL 8.4 `lv_conf.h` (enable `LV_USE_QRCODE`); wire `flush_cb` to the Arduino_GFX
+   framebuffer + FT5x06 `indev` for touch.
+3. Replace the `ui/` serial-log stub with the real list + QR-detail screens.
 
 ## Sources
 
