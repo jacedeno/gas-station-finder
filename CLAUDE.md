@@ -17,14 +17,21 @@ Suggested repo name: `indicator-fuel-finder`.
 - Radios: SX1262 LoRa (862–930 MHz), Wi-Fi 2.4 GHz, BLE 5.0
 - Storage: microSD up to 32 GB (not included)
 - Buzzer: MLT-8530
-- Expansion: 400+ Grove-compatible GPIO
+- Expansion: 2× Grove ports — **both wired to the RP2040, not the ESP32-S3**:
+  `Grove(IIC)` = I²C (RP2040 GPIO20 SDA / GPIO21 SCL, power-enable GPIO18 active-high)
+  and `Grove(ADC)` = analog (GPIO26/27). Inter-proc UART: ESP32-S3 GPIO19/20 ↔ RP2040.
 - Power: USB-C, 5 V / 1 A
 - **NOT onboard:** GPS, battery, cellular
 
 **Externals**
-- Grove GPS module (owned) — provides position + course-over-ground.
+- **Grove – GPS (Air530Z) v1.1** (owned) — UART/NMEA, default **9600 baud**, 3.3 V OK;
+  emits RMC (course-over-ground). Plugs into the **`Grove(IIC)`** port → read by the
+  **RP2040** (its pins double as RP2040 UART1). See `docs/hardware/`.
 - Car USB-C charger — device lives powered (no internal battery).
 - Phone Wi-Fi hotspot (2.4 GHz) — the only uplink while driving.
+
+> **Hardware details:** see [`docs/hardware/`](docs/hardware/) for the full Grove
+> pinout, GPS wiring table, on-device probe (chip/flash/MAC), and source manuals.
 
 ---
 
@@ -32,15 +39,22 @@ Suggested repo name: `indicator-fuel-finder`.
 
 **Standalone on the Indicator.** No runtime dependency on home infra.
 
+> **Revised v1 data path** (the original "GPS → ESP32-S3 direct" was wrong: the Grove
+> ports are on the RP2040). The GPS is read by the RP2040 and forwarded to the
+> ESP32-S3 over the existing inter-processor UART. **No soldering** — chosen Option A.
+
 ```
-Grove GPS ──(NMEA/UART)──> ESP32-S3 ──(HTTPS over phone hotspot)──> TomTom POI Search
-                               │
-                               ├── geometry (haversine + bearing), filtering
-                               ├── LVGL UI (list + QR)
-                               └── buzzer alerts (MLT-8530)
+Air530Z GPS ──(NMEA/UART1 9600)──> RP2040 ──(inter-proc UART)──> ESP32-S3 ──(HTTPS over phone hotspot)──> TomTom POI Search
+   (Grove(IIC) port)                  │         (GPIO19/20)          │
+                                      └ enable Grove power (GPIO18)  ├── geometry (haversine + bearing), filtering
+                                                                     ├── LVGL UI (list + QR)
+                                                                     └── buzzer alerts (MLT-8530)
 ```
 
 The data uplink is outbound-only to TomTom; nothing needs to be exposed inbound.
+
+> **Two firmwares now:** ESP32-S3 (app) **and** RP2040 (GPS reader/forwarder). The
+> RP2040 still owns Grove + buzzer + SD. Meshtastic on the ESP32-S3 stays intact.
 
 ---
 
@@ -51,6 +65,11 @@ The data uplink is outbound-only to TomTom; nothing needs to be exposed inbound.
 - Libraries: `TinyGPSPlus` (NMEA parsing), `ArduinoJson` (POI response),
   `WiFiClientSecure` / `HTTPClient` (HTTPS GET).
 - ESP-IDF is a possible later migration (matches factory firmware); not needed for v1.
+- **RP2040 firmware (new, Option A):** Arduino-Pico (earlephilhower core). Enables
+  the `Grove(IIC)` power switch (GPIO18 high), reads UART1 (GPIO20 TX / GPIO21 RX)
+  at 9600, and forwards NMEA/position to the ESP32-S3 over the inter-proc UART.
+  TinyGPSPlus parsing can live on either side; default to parsing on the RP2040 and
+  shipping clean lat/lng/CoG.
 
 Proposed `src/` layout:
 
@@ -120,12 +139,17 @@ ambiguity for the passenger's GasBuddy lookup.
 
 ## 7. Pending verification (do this before/while scaffolding)
 
-1. **Grove port wiring (KEY HARDWARE UNKNOWN).** Confirm from the Seeed
-   schematic whether the Grove connector(s) route directly to the **ESP32-S3** or
-   through the **RP2040**. This decides whether we flash one firmware (ESP32-S3)
-   or also touch the RP2040.
-2. **Grove GPS UART details.** Which UART/pins it lands on, baud rate, and which
-   NMEA sentences are emitted (need RMC for course-over-ground).
+1. ~~**Grove port wiring (KEY HARDWARE UNKNOWN).**~~ **RESOLVED 2026-06-03.** Both
+   Grove ports route to the **RP2040**. `Grove(IIC)` = GPIO20/21 (+GPIO18 power),
+   `Grove(ADC)` = GPIO26/27. → We flash **two firmwares** (ESP32-S3 app + RP2040
+   GPS reader). See `docs/hardware/grove-ports.md`.
+2. ~~**Grove GPS UART details.**~~ **RESOLVED 2026-06-03 (empirically).** Air530Z =
+   UART/NMEA, **9600 baud**, `$GNRMC` present, `ANTENNA OK`. On `Grove(IIC)` it lands
+   on **RP2040 UART1** (GPIO20 TX / GPIO21 RX) with a straight Grove cable, no
+   crossover. **GPIO18 active-high power switch confirmed.** Physical socket: the
+   **RIGHT** one with the device back facing you (`Grove(ADC)` = left = unusable for
+   GPS; sockets are not labeled on the unit). In arduino-pico, UART1 = **`Serial2`**.
+   Verified with `tools/rp2040-gps-probe/`. See `docs/hardware/gps-air530z-wiring.md`.
 3. **TomTom request shape.** Confirm the fuel/petrol `categorySet`, the field
    mask / returned address fields, result limit, and radius parameter.
 4. **Display driver config.** Confirm the RGB panel controller + pin map for the
@@ -154,6 +178,11 @@ ambiguity for the passenger's GasBuddy lookup.
   covers price, and the QR makes that lookup trivial.
 - **Radial + heading filter over route-search:** ~90% of the "ahead vs behind"
   value at zero extra API cost and minimal code.
+- **GPS on the RP2040 via `Grove(IIC)` (Option A), not soldered to the ESP32-S3:**
+  the only UART-capable Grove pins are the RP2040's, and the user ruled out
+  soldering. Cost is a second (RP2040) firmware + an inter-proc UART hop; benefit is
+  a clean plug-in install with no hardware mods. The straight-cable mapping happens
+  to land GPS TX on UART1 RX, so no crossover is needed. (2026-06-03)
 
 ---
 
