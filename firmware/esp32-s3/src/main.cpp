@@ -85,6 +85,23 @@ void setup() {
 void loop() {
   ui::tick();
 
+#ifdef SELFTEST_TOMTOM
+  // One-shot network self-test: once Wi-Fi is up, query a fixed location so the
+  // full Wi-Fi + TLS + TomTom + JSON + geo path can be validated without a GPS
+  // fix. Build with -DSELFTEST_TOMTOM. Orlando, FL.
+  static bool selftestDone = false;
+  if (!selftestDone && WiFi.status() == WL_CONNECTED) {
+    selftestDone = true;
+    Serial.println("[selftest] Wi-Fi up; running a fixed-location TomTom query...");
+    GpsFix t;
+    t.valid = true;
+    t.lat = 28.5384;
+    t.lng = -81.3789;
+    t.speedKmh = 0;  // stationary -> radial nearest (heading filter skipped)
+    runQuery(t);
+  }
+#endif
+
   if (!gpsLink.poll()) {
     return;  // no new fix this iteration
   }
