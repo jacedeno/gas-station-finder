@@ -9,6 +9,8 @@ Notes captured while resolving the open hardware unknowns from `CLAUDE.md`
   the fact that **both go to the RP2040, not the ESP32-S3**.
 - [`gps-air530z-wiring.md`](./gps-air530z-wiring.md) — the owned Air530Z GPS, and the
   **chosen wiring (Option A)**: plug into `Grove(IIC)`, read on the RP2040.
+- [`display.md`](./display.md) — ST7701S RGB panel + FT5x06 touch pin map, the
+  PCA9535 CS/RST wrinkle, and the LVGL 8.x decision (Pending #4/#5).
 
 External manuals/datasheets: [`../references.md`](../references.md).
 
