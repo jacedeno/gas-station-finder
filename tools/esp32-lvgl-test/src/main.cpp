@@ -46,8 +46,8 @@ static const uint8_t st7701_indicator_init[] = {
     WRITE_C8_D16, 0xC0, 0x3B, 0x00,
     WRITE_C8_D16, 0xC1, 0x0D, 0x02,
     WRITE_C8_D16, 0xC2, 0x31, 0x05,
+    WRITE_C8_D8, 0xC7, 0x04,  // SDIR (Seeed order: before 0xCD)
     WRITE_C8_D8, 0xCD, 0x08,
-    WRITE_C8_D8, 0xC7, 0x04,  // SDIR: 180° hardware flip
     WRITE_COMMAND_8, 0xB0,
     WRITE_BYTES, 16, 0x00, 0x11, 0x18, 0x0E, 0x11, 0x06, 0x07, 0x08, 0x07, 0x22, 0x04, 0x12, 0x0F, 0xAA, 0x31, 0x18,
     WRITE_COMMAND_8, 0xB1,
@@ -84,13 +84,14 @@ static const uint8_t st7701_indicator_init[] = {
     WRITE_C8_D16, 0xEC, 0x3C, 0x00,
     WRITE_COMMAND_8, 0xED,
     WRITE_BYTES, 16, 0xAB, 0x89, 0x76, 0x54, 0x02, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x45, 0x67, 0x98, 0xBA,
+    WRITE_C8_D8, 0x36, 0x10,  // MADCTL — Seeed's orientation value (the missing piece)
     WRITE_COMMAND_8, 0xFF,
     WRITE_BYTES, 5, 0x77, 0x01, 0x00, 0x00, 0x13,
     WRITE_C8_D8, 0xE5, 0xE4,
     WRITE_COMMAND_8, 0xFF,
     WRITE_BYTES, 5, 0x77, 0x01, 0x00, 0x00, 0x00,
-    WRITE_COMMAND_8, 0x21,        // IPS
-    WRITE_C8_D8, 0x3A, 0x60,      // RGB565
+    WRITE_C8_D8, 0x3A, 0x60,      // RGB666 pixel format (Seeed)
+    WRITE_COMMAND_8, 0x21,        // Display Inversion On
     WRITE_COMMAND_8, 0x11,        // Sleep Out
     END_WRITE,
     DELAY, 120,
@@ -98,16 +99,14 @@ static const uint8_t st7701_indicator_init[] = {
     WRITE_COMMAND_8, 0x29,        // Display On
     END_WRITE};
 
-// NOTE (WIP): LVGL renders on this panel but display polish is unresolved — see the
-// "Known issues" section in tools/esp32-display-test/README.md / docs/hardware/display.md.
-// Tried: SW rotation (rotation=2) vs HW rotation (st7701_indicator_init SDIR 0xC7,0x04);
-// LV_COLOR_16_SWAP 0 vs 1; PCLK 12/14/16 MHz; bounce buffer 10/20 lines; forced vs
-// one-shot redraw. Best so far: rotation=2 + type1 init + swap=0 (oriented, but text
-// blurry / occasionally unstable). The custom st7701_indicator_init above is kept for
-// the next attempt at hardware rotation.
+// BEST-RENDERING config (the one that shows the UI + QR, though blurry): Arduino_GFX
+// type1 init + software rotation=2. The Seeed verbatim init (st7701_indicator_init,
+// above) sets orientation via MADCTL/SDIR in hardware, but on its own it gives a blank
+// screen here because it also needs Seeed's matching esp_lcd RGB panel config (scan
+// direction must agree with the RGB timing) — a bigger port, left for later.
 static Arduino_RGB_Display *gfx = new Arduino_RGB_Display(
-    SCREEN_W, SCREEN_H, rgbpanel, 2 /* software 180° (best-rendering so far) */,
-    true, bus, GFX_NOT_DEFINED, st7701_type1_init_operations, sizeof(st7701_type1_init_operations));
+    SCREEN_W, SCREEN_H, rgbpanel, 2 /* software 180° */, true, bus, GFX_NOT_DEFINED,
+    st7701_type1_init_operations, sizeof(st7701_type1_init_operations));
 
 // ---- LVGL plumbing ----
 static lv_disp_draw_buf_t draw_buf;

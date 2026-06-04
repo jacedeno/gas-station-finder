@@ -84,6 +84,34 @@ The decisive findings:
 - **CS/RST via PCA9535:** P04=CS (held low for init), P05=RST (pulse); I²C SDA=39/SCL=40.
 - **Backlight:** GPIO45 high.
 
+## Seeed SDK reference (the authoritative config — port this)
+
+Extracted from Seeed's ESP-IDF SDK (`Seeed-Solution/SenseCAP_Indicator_ESP32`):
+`components/bsp/src/boards/lcd_panel_config.c` (`lcd_panel_st7701s_init`) +
+`sensecap_indicator_board.c` + `peripherals/bsp_lcd.c`.
+
+- **RGB timings (match what we used):** HBP=50, HFP=10, HPW=8; VBP=20, VFP=10, VPW=8.
+- **PCLK = 18 MHz** (Kconfig default), `pclk_active_neg` per board.
+- **Framebuffer:** `fb_in_psram = 1`. **No bounce buffer.** To avoid tearing Seeed uses
+  **`double_fb = 1` + `refresh_on_demand = 1` + an `on_vsync` callback** (esp_lcd
+  RGB) — *not* a bounce buffer.
+- **ST7701 init:** their `lcd_panel_st7701s_init` is the canonical sequence. Two pieces
+  Arduino_GFX's `st7701_type1_init_operations` is MISSING:
+  - **`0x36` (MADCTL) = `0x10`** — orientation (the panel is mounted 180°), in hardware.
+  - **`0xC7` (SDIR) = `0x04`** — source direction.
+  - Pixel format `0x3A = 0x60` (RGB666); `0x21` display-inversion on.
+  A verbatim translation is in `tools/esp32-lvgl-test` as `st7701_indicator_init`.
+
+### Why Arduino_GFX struggled (architecture)
+
+Arduino_GFX's `Arduino_ESP32RGBPanel` hardcodes `num_fbs = 1` and offers only a bounce
+buffer — it can't do Seeed's `double_fb` + vsync-synced refresh. With a single PSRAM
+framebuffer + LVGL writes, it tears/stripes/blurs. **Recommended: drop Arduino_GFX for
+the panel and port Seeed's `esp_lcd` setup directly** (double framebuffer + the two LVGL
+draw buffers = the two FBs, the standard Espressif "avoid tearing" pattern), keeping the
+PCA9535 CS/RST init. That is the clean path; the Arduino_GFX route in `esp32-lvgl-test`
+was a dead-end for a tear-free UI.
+
 ## Remaining bring-up (LVGL) — WORK IN PROGRESS
 
 1. ✅ PCA9535 CS/RST + ST7701S init + RGB panel + bounce buffer — done. Direct
