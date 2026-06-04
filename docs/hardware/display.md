@@ -84,12 +84,22 @@ The decisive findings:
 - **CS/RST via PCA9535:** P04=CS (held low for init), P05=RST (pulse); I²C SDA=39/SCL=40.
 - **Backlight:** GPIO45 high.
 
-## Remaining bring-up (LVGL)
+## Remaining bring-up (LVGL) — WORK IN PROGRESS
 
-1. ✅ PCA9535 CS/RST + ST7701S init + RGB panel + bounce buffer — done (see above).
-2. LVGL 8.4 `lv_conf.h` (enable `LV_USE_QRCODE`); wire `flush_cb` to the Arduino_GFX
-   framebuffer + FT5x06 `indev` for touch.
-3. Replace the `ui/` serial-log stub with the real list + QR-detail screens.
+1. ✅ PCA9535 CS/RST + ST7701S init + RGB panel + bounce buffer — done. Direct
+   `gfx->fillScreen()` colour fills are clean and sharp.
+2. ⚠️ LVGL 8.4 renders on the panel (`tools/esp32-lvgl-test`, `lv_qrcode` works) but
+   output is **blurry / not yet clean**, and the 180° orientation vs sharpness is
+   unresolved. The panel is fine (direct fills are sharp), so it's the LVGL→framebuffer
+   path. See that tool's README for the full matrix of what was tried.
+   - **Most promising fix (researched, not yet working):** do the 180° flip in the
+     ST7701 init in HARDWARE — flip BOTH source (`0xC7` SDIR) and gate (`0xC0` scan
+     direction) — and set Arduino_GFX `rotation=0`. Software rotation smears partial
+     flushes (the likely blur). Best reference: port the Seeed ESP-IDF
+     `SenseCAP_Indicator_ESP32` `lv_port` + ST7701 init verbatim, or Arduino_GFX
+     discussion #334.
+3. Then wire FT5x06 touch (`indev`) and replace the `ui/` serial-log stub with the real
+   list + QR-detail screens.
 
 ## Sources
 
