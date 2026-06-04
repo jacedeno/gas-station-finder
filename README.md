@@ -8,8 +8,9 @@ cross-reference its price in GasBuddy.
 It runs as **separate custom firmware** — the device's Meshtastic firmware is left
 untouched and recoverable.
 
-> **Status:** v1 design / pre-scaffolding. See [Pending verification](#pending-verification)
-> for the open hardware/API questions to resolve before building.
+> **Status:** core works end-to-end (GPS → RP2040 → ESP32 → TomTom, verified on
+> hardware); the on-screen LVGL UI is the remaining piece. See **[`docs/STATUS.md`](docs/STATUS.md)**
+> for the current state and the next-session plan.
 
 ---
 
