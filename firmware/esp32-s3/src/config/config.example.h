@@ -19,8 +19,7 @@
 #define MIN_QUERY_INTERVAL_MS 15000   // never hit the API faster than this
 
 // ---- Inter-processor UART to the RP2040 (see firmware/PROTOCOL.md) ----
-// ESPHome places the link on ESP32-S3 GPIO19/20; exact TX/RX split unconfirmed.
-// If no FIX lines arrive, swap these two.
+// Confirmed on-device 2026-06-03 (tools/esp32-link-probe): RX = GPIO20, TX = GPIO19.
 #define PIN_LINK_RX 20
 #define PIN_LINK_TX 19
 #define LINK_BAUD 115200

@@ -136,8 +136,11 @@ ambiguity for the passenger's GasBuddy lookup.
 - **MQTT / home-infra integration.** No runtime dependency on GeekLab.
 - **Route-following / search-along-route.** True along-route POIs need a routing
   API + a fixed destination; deferred to a later phase. v1 = radial + heading filter.
-- **Do not modify the Meshtastic firmware partition.** This is a separate custom
-  firmware; Meshtastic must remain intact and recoverable.
+- ~~**Do not modify the Meshtastic firmware partition.**~~ **No longer a
+  constraint (2026-06-03):** the owner does not need Meshtastic — both MCUs may be
+  overwritten freely. The RP2040 already runs our GPS-reader firmware and the
+  ESP32-S3 has been reflashed. Keep recovery UF2s handy, but flashing either MCU is
+  not restricted. (Meshtastic remains separate custom firmware, restorable if wanted.)
 
 ---
 
@@ -154,16 +157,23 @@ ambiguity for the passenger's GasBuddy lookup.
    **RIGHT** one with the device back facing you (`Grove(ADC)` = left = unusable for
    GPS; sockets are not labeled on the unit). In arduino-pico, UART1 = **`Serial2`**.
    Verified with `tools/rp2040-gps-probe/`. See `docs/hardware/gps-air530z-wiring.md`.
-3. **TomTom request shape.** Confirm the fuel/petrol `categorySet`, the field
-   mask / returned address fields, result limit, and radius parameter.
-4. **Display driver config.** Confirm the RGB panel controller + pin map for the
-   Indicator under the PlatformIO Arduino setup (may need Seeed's board
-   definition / reference repo).
-5. **LVGL version pin.** Lock the LVGL major version and confirm `lv_qrcode`
-   availability for that version.
-6. **Phone hotspot band.** Confirm the phone hotspot can run on 2.4 GHz (device
+3. ~~**TomTom request shape.**~~ **RESOLVED.** `nearbySearch`, `categorySet=7311`,
+   `freeformAddress`, `radius`/`limit`/`countrySet`, parse `dist`. See
+   `TOMTOM_SEARCH_API.md` and the `TomTomProvider` impl. (Not yet run live — needs a
+   real API key in `config.h`.)
+4. ~~**Display driver config.**~~ **RESOLVED 2026-06-03 (docs).** ST7701S 480×480
+   RGB565; full pin map (RGB on GPIO0–18+21, SPI init GPIO41/48, **CS/RST via a
+   PCA9535 I²C expander**, backlight GPIO45); FT5x06 touch on GPIO39/40. No conflict
+   with the GPS link (GPIO19/20). See `docs/hardware/display.md`. Bring-up still to
+   be implemented + verified on-device.
+5. ~~**LVGL version pin.**~~ **RESOLVED.** Pin **LVGL 8.4.0** — `lv_qrcode` ships
+   inside LVGL 8.x (`LV_USE_QRCODE`); moved out in v9. See `docs/hardware/display.md`.
+6. **Inter-proc link pins (ESP32 side).** ~~unconfirmed~~ **RESOLVED 2026-06-03
+   (empirically):** ESP32 link RX = GPIO20, TX = GPIO19 (`tools/esp32-link-probe`).
+   Full GPS → RP2040 → ESP32 path verified end-to-end.
+7. **Phone hotspot band.** Confirm the phone hotspot can run on 2.4 GHz (device
    has no 5 GHz radio).
-7. **TomTom pricing change effective 2026-07-01** — re-check terms if this becomes
+8. **TomTom pricing change effective 2026-07-01** — re-check terms if this becomes
    a permanent project.
 
 ---
