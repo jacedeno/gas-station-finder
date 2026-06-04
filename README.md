@@ -16,12 +16,16 @@ untouched and recoverable.
 ## How it works
 
 ```
-Grove GPS ──(NMEA/UART)──> ESP32-S3 ──(HTTPS over phone hotspot)──> TomTom POI Search
-                               │
-                               ├── geometry (haversine + bearing), filtering
-                               ├── LVGL UI (list + QR)
-                               └── buzzer alerts (MLT-8530)
+Air530Z GPS ──(NMEA/UART 9600)──> RP2040 ──(inter-proc UART)──> ESP32-S3 ──(HTTPS over phone hotspot)──> TomTom POI Search
+  (Grove(IIC) port)                                                 │
+                                                                    ├── geometry (haversine + bearing), filtering
+                                                                    ├── LVGL UI (list + QR)
+                                                                    └── buzzer alerts (MLT-8530)
 ```
+
+> The Grove ports are wired to the **RP2040**, so the GPS plugs into `Grove(IIC)`
+> and the RP2040 forwards NMEA to the ESP32-S3. No soldering. Details in
+> [`docs/hardware/`](docs/hardware/).
 
 1. Parse GPS continuously — position + course-over-ground (NMEA `RMC`).
 2. On a **~3 km movement threshold**, query TomTom for nearby fuel stations.
@@ -126,10 +130,12 @@ only** and set a spend cap. Pass it as `TOMTOM_API_KEY`; inject at build/runtime
 
 Open questions to resolve before/while scaffolding:
 
-1. **Grove port wiring (key unknown)** — do the Grove connector(s) route directly
-   to the ESP32-S3 or through the RP2040? Decides one firmware vs. two.
-2. **Grove GPS UART details** — UART/pins, baud rate, and which NMEA sentences are
-   emitted (need `RMC` for course-over-ground).
+1. ~~**Grove port wiring (key unknown)**~~ — **Resolved:** both Grove ports are on
+   the **RP2040** → two firmwares (ESP32-S3 app + RP2040 GPS reader). See
+   [`docs/hardware/grove-ports.md`](docs/hardware/grove-ports.md).
+2. ~~**Grove GPS UART details**~~ — **Resolved:** Air530Z = UART/NMEA @ 9600, RMC
+   present; lands on RP2040 UART1 (GPIO20/21) via `Grove(IIC)`, no crossover. See
+   [`docs/hardware/gps-air530z-wiring.md`](docs/hardware/gps-air530z-wiring.md).
 3. **TomTom request shape** — confirm the fuel `categorySet` (likely `7311`), field
    mask / address fields, result limit, radius. *(Largely resolved in
    [`TOMTOM_SEARCH_API.md`](TOMTOM_SEARCH_API.md).)*
