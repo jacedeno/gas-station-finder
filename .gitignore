@@ -4,10 +4,10 @@
 .piolibdeps/
 
 # Secrets (per CLAUDE.md §10): Wi-Fi creds, TomTom API key, etc.
-# Keep these out of version control.
-src/config/secrets.h
-src/config/*secret*
+# Keep these out of version control. config.example.h IS committed; config.h is not.
+**/config/config.h
 **/secrets.h
+*secret*
 
 # Editor / OS
 .vscode/.browse.c_cpp.db*
