@@ -9,15 +9,14 @@ dedicated inter-processor UART. We define our own simple ASCII line protocol
 | Side | UART | TX | RX |
 |------|------|----|----|
 | RP2040 | UART0 (`Serial1`) | GPIO16 | GPIO17 |
-| ESP32-S3 | UART1 (`Serial1`) | GPIO19/20 ¹ | GPIO19/20 ¹ |
+| ESP32-S3 | UART1 (`Serial1`) | **GPIO19** | **GPIO20** |
 
-Cross-wired: RP2040 TX(16) → ESP32 RX, ESP32 TX → RP2040 RX(17).
+Cross-wired: RP2040 TX(16) → ESP32 RX(20); ESP32 TX(19) → RP2040 RX(17).
 Baud: **115200**.
 
-¹ ESPHome places the link on ESP32-S3 GPIO19/20; the exact TX/RX split is not yet
-confirmed against the schematic. The ESP32 firmware keeps these as named constants
-(`PIN_LINK_RX` / `PIN_LINK_TX`) — swap them if no data arrives. See Pending in
-`CLAUDE.md`.
+> **Confirmed empirically 2026-06-03** with `tools/esp32-link-probe/`: the RP2040's
+> `FIX` lines arrive on ESP32-S3 **GPIO20** (GPIO19 receives nothing). So the ESP32
+> link RX = GPIO20, TX = GPIO19. The full GPS → RP2040 → ESP32 path works end-to-end.
 
 ## Line format
 

@@ -19,6 +19,17 @@ are intentionally omitted. Captured 2026-06-03.
 - RP2040 datasheet (GPIO function table) — GPIO20 = UART1 TX, GPIO21 = UART1 RX
   (function F2); the basis for reading the Grove(IIC) pins as a UART.
 
+## Display & touch (ST7701S / FT5x06)
+
+- [Seeed SenseCAP Indicator — ESPHome device DB](https://devices.esphome.io/devices/seeed-sensecap/)
+  — full RGB panel pin map (HSYNC/VSYNC/DE/PCLK + R/G/B data), SPI init pins
+  (GPIO41/48), CS/RST on the PCA9535 expander, backlight GPIO45, FT5x06 touch on
+  GPIO39/40, and the `mipi_rgb` model `SEEED-INDICATOR-D1`.
+- [Develop SenseCAP Indicator with Arduino — Seeed Wiki](https://wiki.seeedstudio.com/SenseCAP_Indicator_ESP32_Arduino/)
+  — Arduino + LVGL bring-up reference for the ESP32-S3.
+- [Arduino_GFX discussion #334 (SenseCAP Indicator SPI/CS)](https://github.com/moononournation/Arduino_GFX/discussions/334)
+  — notes that SPI_CS and LCD_RST are routed through the PCA9535 I²C expander.
+
 ## Grove – GPS (Air530Z)
 
 - [Grove – GPS (Air530 / Air530Z) — Seeed Wiki](https://wiki.seeedstudio.com/Grove-GPS-Air530/)
