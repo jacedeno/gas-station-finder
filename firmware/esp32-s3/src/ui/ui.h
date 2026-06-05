@@ -16,6 +16,10 @@ namespace ui {
 // Initialise the display/LVGL stack. Returns false until implemented.
 bool begin();
 
+// Update the status line under the header (e.g. "Online - waiting for GPS").
+// Lets the app reflect real Wi-Fi/GPS state instead of a stale "Connecting...".
+void setStatus(const char* msg);
+
 // Show the ranked list of stations (brand + address + distance + bearing).
 void showStations(const std::vector<Station>& stations);
 

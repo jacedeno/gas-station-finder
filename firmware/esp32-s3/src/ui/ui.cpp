@@ -356,6 +356,10 @@ bool begin() {
   return true;
 }
 
+void setStatus(const char *msg) {
+  if (s_ready) lv_label_set_text(s_status, msg);
+}
+
 void showStations(const std::vector<Station> &stations) {
   // Keep logging too — handy on serial while driving.
   Serial.printf("[ui] %u station(s):\n", (unsigned)stations.size());

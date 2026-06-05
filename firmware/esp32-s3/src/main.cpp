@@ -89,8 +89,35 @@ void setup() {
   Serial.printf("[app] provider: %s\n", provider.name());
 }
 
+// Reflect the real Wi-Fi/GPS state on screen + serial once a second, so the panel
+// never sits on a stale "Connecting..." (the station list only appears once we have a
+// Wi-Fi link + a GPS fix; the first query then runs immediately, no movement needed).
+static void reportState() {
+  static unsigned long lastMs = 0;
+  if (millis() - lastMs < 1000) return;
+  lastMs = millis();
+
+  const bool wifi = WiFi.status() == WL_CONNECTED;
+  const GpsFix& f = gpsLink.fix();
+  char st[72];
+  if (!wifi) {
+    snprintf(st, sizeof(st), "Connecting to %s...", WIFI_SSID);
+  } else if (!f.valid) {
+    snprintf(st, sizeof(st), "Online - waiting for GPS (%d sats)", f.sats);
+  } else if (!haveQueried) {
+    snprintf(st, sizeof(st), "GPS ok - searching ahead...");
+  } else {
+    st[0] = '\0';  // a query has run; leave the list's own status alone
+  }
+  if (st[0]) ui::setStatus(st);
+  Serial.printf("[state] wifi=%d ip=%s fix=%d sats=%d%s\n", wifi,
+                wifi ? WiFi.localIP().toString().c_str() : "-", f.valid, f.sats,
+                haveQueried ? " (queried)" : "");
+}
+
 void loop() {
   ui::tick();
+  reportState();
 
 #ifdef SELFTEST_TOMTOM
   // One-shot network self-test: once Wi-Fi is up, query a fixed location so the
