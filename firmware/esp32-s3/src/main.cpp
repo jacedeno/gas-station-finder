@@ -72,7 +72,14 @@ void setup() {
 
   ui::begin();
 
+  // The RGB panel streams its framebuffer from PSRAM, which shares the SPI bus with
+  // flash. WiFi writing creds to NVS (flash) locks that bus and stalls the panel's
+  // bounce-buffer refill -> visible flicker. persistent(false) stops those NVS writes;
+  // setSleep(false) keeps the modem steady (no periodic wake bursts). See
+  // docs/hardware/display.md "WiFi + RGB panel".
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.printf("[app] connecting to Wi-Fi \"%s\"...\n", WIFI_SSID);
 

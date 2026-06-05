@@ -36,19 +36,33 @@ What made it work (all in `tools/esp32-esplcd-lvgl/`, spec in `docs/hardware/dis
 - **LVGL `full_refresh=1`** with the two framebuffers as the draw buffers; flush =
   zero-copy `draw_bitmap` swap synced to vsync. Orientation is in the init (no SW rotation).
 
-## ▶️ Next session: touch + fold the UI into the app
+### ✅ App integration: real data on the panel (2026-06-04)
+The display is now **in the app**, not just the tool — verified on-device with the live
+TomTom self-test (10 real Orlando stations on screen):
+- `firmware/esp32-s3/` migrated to the **pioarduino core-3.x platform** (esp_lcd in core).
+- `src/ui/ui.cpp` is the real LVGL backend (esp_lcd panel ported from the tool) — replaces
+  the serial-log stub. Shows the **top 5 nearest-ahead** as two-line rows (brand +
+  **distance in miles** + N/S/E/W on top, full address in grey below; nearest in green),
+  the **geo: QR** for the nearest, and the **geekendzone.com logo** top-right
+  (`src/ui/gz_logo.c`, generated from the site's `logo-onblack.png`).
+- **Wi-Fi + RGB flicker fixed** — see `docs/hardware/display.md` "Wi-Fi + the RGB panel":
+  bounce buffer + `WiFi.persistent(false)` + `setSleep(false)` + PCLK 16 MHz. No 120 MHz
+  PSRAM (not reachable on the precompiled core).
+- Device currently runs the **production** build (GPS-driven; queries on ~3 km movement).
+  Build the bench variant with `-DSELFTEST_TOMTOM` to query a fixed Orlando location.
 
-1. **Touch (FT5x06, I²C GPIO39/40)** — add an `indev` reader (port Seeed's
-   `touchpad_read`; note the `W - x`, `H - y` mapping for the 180° mount) and register it
-   as an LVGL pointer device in `tools/esp32-esplcd-lvgl/` first to verify taps.
-2. **Migrate the app to core 3.x + esp_lcd** — `firmware/esp32-s3/` still uses the
-   `espressif32` 6.x platform (core 2.0.17). Switch it to the pioarduino 55.03.x platform
-   used by the tool, so esp_lcd is available.
-3. **Port the display + UI into `firmware/esp32-s3/src/ui/`** — lift the panel/LVGL setup
-   from the tool into the app's `ui/` module (replacing the serial-log stub) and feed it
-   real `Station` data from the existing pipeline (GPS → TomTom → geo).
+## ▶️ Next session: touch (optional) + polish
 
-Estimate: touch ≈ short; app migration + UI wiring ≈ one focused session.
+1. **Touch (FT5x06, I²C GPIO39/40)** — only needed if we want tap-to-scroll or a tappable
+   detail screen. The driving UI deliberately shows the top 5 with no scroll, so this is
+   now a nice-to-have, not a blocker. Port Seeed's `touchpad_read` (note `W - x`, `H - y`
+   for the 180° mount) and register it as an LVGL pointer `indev`.
+2. **Polish ideas:** a "no fuel ahead / searching" state while moving; a low-fuel/buzzer
+   path (BUZZ to the RP2040); brand filter from `config.h`.
+
+## 🔑 Before the trip
+- **Rotate the TomTom API key** (it's in flash + chat history). `config.h` is git-ignored.
+- Confirm the phone hotspot (`GeekSpot`) is 2.4 GHz and stays associated while driving.
 
 ## Housekeeping / reminders
 - 🔑 **Rotate the TomTom API key** used for testing (it's in the ESP32 flash + chat

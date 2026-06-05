@@ -166,6 +166,35 @@ was a dead-end for a tear-free UI.
 3. ⏭️ Next: wire FT5x06 touch (`indev`) and fold the panel/LVGL setup + the list +
    QR-detail screens into the app's `ui/` module (see `docs/STATUS.md`).
 
+## Wi-Fi + the RGB panel (PSRAM bus contention) — fixed 2026-06-04
+
+When the app turned Wi-Fi on, the panel degraded to "bad-TV" noise, then (after
+mitigation) a residual flicker. **Root cause:** the RGB panel streams its framebuffer
+from PSRAM, and on the ESP32-S3 **PSRAM and flash share one SPI bus**. Wi-Fi/TLS traffic
+saturates PSRAM bandwidth, and — worse — any **flash/NVS write locks the whole bus**,
+stalling the panel's data path (Espressif RGB-LCD FAQ; arduino-esp32 discussion #12339,
+"tearing when writing NVS").
+
+Seeed's own firmware avoids this by running **PSRAM at 120 MHz** (`CONFIG_SPIRAM_SPEED_120M`
+in their app `sdkconfig.defaults`). That needs an ESP-IDF rebuild with experimental
+features and is **not reachable on the precompiled arduino-esp32 core** (arduino-esp32
+#9351). So we use the precompiled-core-friendly mitigations instead:
+
+- **Bounce buffer** (`bounce_buffer_size_px = h_res * 20`) — the esp_lcd-documented fix:
+  the driver DMAs framebuffer lines into small internal-SRAM buffers ahead of scanout, so
+  a busy PSRAM bus no longer starves the panel. Requires the panel to free-run, so
+  `refresh_on_demand` is OFF (no manual refresh task). Kept `num_fbs=2` for tear-free.
+- **`WiFi.persistent(false)`** — stops Wi-Fi writing credentials to NVS/flash on every
+  connect (the #1 flicker trigger — those writes lock the shared bus).
+- **`WiFi.setSleep(false)`** — steady modem, no periodic wake bursts.
+- **PCLK 18 → 16 MHz** — a little less scanout bandwidth = more headroom for the bounce
+  refill under contention. ~56 Hz, still flicker-free.
+
+Result (verified on-device): clean, **no flicker** with Wi-Fi up + a live TomTom query.
+If a future build needs heavy/constant Wi-Fi throughput and flicker returns, the robust
+fallback is **Wi-Fi on-demand** (connect → query → disconnect; the panel is rock-solid
+with the radio off, and queries are only every few km).
+
 ## Sources
 
 ESPHome device DB and Seeed SDK — see [`../references.md`](../references.md).
