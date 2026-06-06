@@ -21,15 +21,18 @@
 #define FSQ_HOST "places-api.foursquare.com"
 #define FSQ_RADIUS_M 10000        // search radius in metres
 #define FSQ_LIMIT 20              // raw results fetched before rating filter
-#define FSQ_MIN_RATING 8.6        // keep restaurants rated >= this (0-10, ~4.3/5)
+// 7.8 (not 8.6): Foursquare scores run low; 8.6 hid solid chains and emptied
+// highway sections. Verified live 2026-06-05.
+#define FSQ_MIN_RATING 7.8        // keep restaurants rated >= this (Foursquare 0-10)
 // Cuisine category IDs to include (only these come back, so fast-food/Mexican are
-// excluded by omission). Order: Greek, Mediterranean, Peruvian, Steakhouse,
-// American, New American, Turkish, Meze, Italian, Salad, BBQ.
+// excluded by omission). Generic "American" dropped (noisy); New American stays.
+// Order: Greek, Mediterranean, Peruvian, Steakhouse, New American, Turkish, Meze,
+// Italian, Salad, BBQ.
 #define FSQ_CATEGORIES \
   "4bf58dd8d48988d10e941735,4bf58dd8d48988d1c0941735,4eb1bfa43b7b52c0e1adc2e8," \
-  "4bf58dd8d48988d1cc941735,4bf58dd8d48988d14e941735,4bf58dd8d48988d157941735," \
-  "4f04af1f2fb6e1c99f3db0bb,53d6c1b0e4b02351e88a83da,4bf58dd8d48988d110941735," \
-  "4bf58dd8d48988d1bd941735,4bf58dd8d48988d1df931735"
+  "4bf58dd8d48988d1cc941735,4bf58dd8d48988d157941735,4f04af1f2fb6e1c99f3db0bb," \
+  "53d6c1b0e4b02351e88a83da,4bf58dd8d48988d110941735,4bf58dd8d48988d1bd941735," \
+  "4bf58dd8d48988d1df931735"
 
 // ---- Behaviour thresholds (CLAUDE.md §5) ----
 #define MOVEMENT_THRESHOLD_M 3000.0   // re-query after moving this far

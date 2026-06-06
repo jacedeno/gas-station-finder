@@ -72,9 +72,13 @@ Delete the QR/detail code paths.
   Peruvian, Steakhouse, American, New American, Turkish, Meze, Italian, Salad, BBQ)
   live in `config.h` as `FSQ_CATEGORIES`.
 - **`rating` is Premium → requires billing.** A call requesting `rating` on an
-  account with no credits returns **HTTP 429** (`no API credits remaining`). The
-  user is enabling billing on Foursquare; the plan assumes `rating` is available.
+  account with no credits returns **HTTP 429** (`no API credits remaining`).
+  Billing was enabled (credits purchased); a live `rating` call now returns 200.
   Cost est. ~$10–15 for the 7-day trip.
+- **Threshold = 7.8, not 8.6** (verified live): Foursquare scores run low, so 8.6
+  hid solid chains (Longhorn = 7.8) and emptied highway sections. 7.8 keeps them.
+- **Generic "American" category dropped** — too broad (pulled Shake Shack/pubs).
+  Specific cuisines + "New American" stay. Final list = **10** category IDs.
 - **Category IDs are hex strings** (e.g. Greek = `4bf58dd8d48988d10e941735`), not
   integers — verified, not assumed.
 - **Quality filter:** keep `rating ≥ RESTAURANT_MIN_RATING` (default **8.6**/10 ≈
@@ -112,14 +116,20 @@ behavior:
 
 ## 5. Config (`config.h`, git-ignored; mirror in `config.example.h`)
 
+Actual macro names (as implemented):
+
 | Key | Default | Use |
 | --- | --- | --- |
-| `FOURSQUARE_API_KEY` | — | Foursquare service key (scope + spend cap; rotate before/after trip) |
-| `RESTAURANT_MIN_RATING` | `8.6` | Min Foursquare rating (0–10) to show |
-| `RESTAURANT_CATEGORIES` | (cuisine IDs) | Foursquare category IDs to include |
-| `RESTAURANT_RADIUS_M` | `10000` | Search radius (m) |
-| `RESTAURANT_LIMIT` | small (e.g. 20) | Max raw results to fetch before filtering |
-| `RESTAURANT_MOVE_KM` | = fuel threshold | Movement before re-querying food (cost knob) |
+| `FSQ_API_KEY` | — | Foursquare service key (spend cap; rotate before/after trip) |
+| `FSQ_API_VERSION` | `2025-06-17` | Required `X-Places-Api-Version` header |
+| `FSQ_HOST` | `places-api.foursquare.com` | API host |
+| `FSQ_MIN_RATING` | `7.8` | Min Foursquare rating (0–10) to show |
+| `FSQ_CATEGORIES` | 10 cuisine IDs | Foursquare `fsq_category_ids` to include |
+| `FSQ_RADIUS_M` | `10000` | Search radius (m) |
+| `FSQ_LIMIT` | `20` | Max raw results fetched before the rating filter |
+
+(Food re-queries on the same movement trigger as fuel; a separate threshold was not
+added — kept simple. The cost knob remains available if needed later.)
 
 ---
 
