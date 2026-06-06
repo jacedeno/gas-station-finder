@@ -1,32 +1,26 @@
-// LVGL UI — list view + station detail with a geo: QR code (CLAUDE.md §5).
-//
-// STUB / TODO: the LVGL display + touch backend depends on the Indicator's RGB
-// panel driver and pin map, which are still unverified (CLAUDE.md Pending #4/#5).
-// Until that is locked, the app logs results to serial instead of drawing them.
-// This header fixes the interface so main.cpp can be wired now and the LVGL
-// implementation dropped in later without touching the rest of the firmware.
+// LVGL UI — split screen: nearest fuel (top) + top-rated restaurants ahead
+// (bottom), on the real ST7701S 480x480 RGB panel via esp_lcd. The per-station QR
+// was removed in favour of the restaurants section (see the design spec).
 #pragma once
 
 #include <vector>
 
-#include "../poi_client/fuel_provider.h"
+#include "../poi_client/place_provider.h"
 
 namespace ui {
 
-// Initialise the display/LVGL stack. Returns false until implemented.
+// Initialise the display/LVGL stack. Returns false on failure.
 bool begin();
 
 // Update the status line under the header (e.g. "Online - waiting for GPS").
 // Lets the app reflect real Wi-Fi/GPS state instead of a stale "Connecting...".
 void setStatus(const char* msg);
 
-// Show the ranked list of stations (brand + address + distance + bearing).
-void showStations(const std::vector<Station>& stations);
+// Render the whole screen: up to 2 nearest-ahead fuel stations on top, up to 2
+// nearest-ahead qualifying restaurants on the bottom. Either list may be empty.
+void showScreen(const std::vector<Place>& fuel, const std::vector<Place>& food);
 
-// Show the detail screen for one station, including the geo:lat,lng QR code.
-void showDetail(const Station& station);
-
-// Pump LVGL timers; call from loop(). No-op until implemented.
+// Pump LVGL timers; call from loop().
 void tick();
 
 }  // namespace ui

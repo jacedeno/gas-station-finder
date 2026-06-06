@@ -6,12 +6,12 @@
 // firmware/PROTOCOL.md). For now this is a stub that logs the decision.
 #pragma once
 
-#include "../poi_client/fuel_provider.h"
+#include "../poi_client/place_provider.h"
 
 namespace alerts {
 
 // Returns true if the nearest target is within `triggerM` metres — i.e. the
 // buzzer should sound. (Wiring the actual tone is a TODO; see note above.)
-bool shouldAlert(const Station& nearest, double triggerM);
+bool shouldAlert(const Place& nearest, double triggerM);
 
 }  // namespace alerts

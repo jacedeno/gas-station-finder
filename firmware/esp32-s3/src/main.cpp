@@ -1,9 +1,9 @@
 // SenseCAP Indicator — ESP32-S3 main app (Indicator Fuel Finder).
 //
 // Pipeline: receive GPS fixes from the RP2040 over the inter-proc UART -> on a
-// movement threshold, query TomTom for nearby fuel -> compute bearing + heading
-// filter locally -> render (UI is a serial-log stub until the panel driver is
-// confirmed). See CLAUDE.md for the full design.
+// movement threshold, query TomTom (fuel) and Foursquare (top-rated restaurants)
+// for nearby places -> compute bearing + heading filter locally -> render the split
+// screen (nearest fuel on top, restaurants below). See CLAUDE.md for the full design.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -20,47 +20,57 @@
 #include "alerts/alerts.h"
 #include "geo/geo.h"
 #include "gps/gps_link.h"
+#include "poi_client/foursquare_provider.h"
 #include "poi_client/tomtom_provider.h"
 #include "ui/ui.h"
 
 static GpsLink gpsLink;
-static TomTomProvider provider(TOMTOM_API_KEY, TOMTOM_RADIUS_M, TOMTOM_LIMIT);
+static TomTomProvider fuelProvider(TOMTOM_API_KEY, TOMTOM_RADIUS_M, TOMTOM_LIMIT);
+static FoursquareProvider foodProvider(FSQ_API_KEY, FSQ_API_VERSION, FSQ_HOST,
+                                       FSQ_CATEGORIES, FSQ_RADIUS_M, FSQ_LIMIT,
+                                       FSQ_MIN_RATING);
 
 // Where we last ran a query, to enforce the movement threshold.
 static bool haveQueried = false;
 static double lastQueryLat = 0, lastQueryLng = 0;
 static unsigned long lastQueryMs = 0;
 
-static void runQuery(const GpsFix& fix) {
-  std::vector<Station> stations;
-  if (!provider.getNearby(fix.lat, fix.lng, stations)) {
-    Serial.println("[app] provider query failed.");
-    return;
+// Compute bearings, apply the "ahead" heading filter (only when moving fast enough
+// that course is trustworthy — below that, course is noisy so we keep radial-nearest),
+// then sort nearest-first. Shared by both the fuel and food lists.
+static void filterAndRank(std::vector<Place>& v, const GpsFix& fix) {
+  for (Place& p : v) {
+    p.bearingDeg = geo::bearingDeg(fix.lat, fix.lng, p.lat, p.lng);
   }
-
-  // Bearing is computed locally; distance comes from the provider (`dist`).
-  for (Station& s : stations) {
-    s.bearingDeg = geo::bearingDeg(fix.lat, fix.lng, s.lat, s.lng);
-  }
-
-  // Heading filter only when moving fast enough that course is trustworthy.
   if (fix.speedKmh >= HEADING_FILTER_MIN_KMH) {
-    stations.erase(
-        std::remove_if(stations.begin(), stations.end(),
-                       [&](const Station& s) {
-                         return !geo::isAhead(s.bearingDeg, fix.courseDeg,
-                                              HEADING_TOLERANCE_DEG);
-                       }),
-        stations.end());
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [&](const Place& p) {
+                             return !geo::isAhead(p.bearingDeg, fix.courseDeg,
+                                                  HEADING_TOLERANCE_DEG);
+                           }),
+            v.end());
+  }
+  std::sort(v.begin(), v.end(),
+            [](const Place& a, const Place& b) { return a.distanceM < b.distanceM; });
+}
+
+static void runQuery(const GpsFix& fix) {
+  // Distance comes from each provider; bearing + filtering are computed locally.
+  std::vector<Place> fuel, food;
+  if (!fuelProvider.getNearby(fix.lat, fix.lng, fuel)) {
+    Serial.println("[app] fuel provider query failed.");
+  }
+  // Food is best-effort: a failure (e.g. 429 before Foursquare billing is enabled)
+  // just leaves the restaurants section empty — the fuel half still works.
+  if (!foodProvider.getNearby(fix.lat, fix.lng, food)) {
+    Serial.println("[app] food provider query failed -> empty restaurants section.");
   }
 
-  std::sort(stations.begin(), stations.end(),
-            [](const Station& a, const Station& b) {
-              return a.distanceM < b.distanceM;
-            });
+  filterAndRank(fuel, fix);
+  filterAndRank(food, fix);
 
-  ui::showStations(stations);
-  if (!stations.empty() && alerts::shouldAlert(stations.front(), 500.0)) {
+  ui::showScreen(fuel, food);
+  if (!fuel.empty() && alerts::shouldAlert(fuel.front(), 500.0)) {
     Serial.println("[app] within range -> would buzz (TODO: send BUZZ to RP2040).");
   }
 }
@@ -86,7 +96,8 @@ void setup() {
   Serial1.begin(LINK_BAUD, SERIAL_8N1, PIN_LINK_RX, PIN_LINK_TX);
   gpsLink.begin(Serial1);
 
-  Serial.printf("[app] provider: %s\n", provider.name());
+  Serial.printf("[app] providers: %s (fuel), %s (food)\n", fuelProvider.name(),
+                foodProvider.name());
 }
 
 // Reflect the real Wi-Fi/GPS state on screen + serial once a second, so the panel

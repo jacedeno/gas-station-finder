@@ -4,7 +4,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 
-bool TomTomProvider::getNearby(double lat, double lng, std::vector<Station>& out) {
+bool TomTomProvider::getNearby(double lat, double lng, std::vector<Place>& out) {
   out.clear();
 
   // Build the Nearby Search query (see TOMTOM_SEARCH_API.md §2-3).
@@ -47,10 +47,10 @@ bool TomTomProvider::getNearby(double lat, double lng, std::vector<Station>& out
   }
 
   for (JsonObject r : doc["results"].as<JsonArray>()) {
-    Station s;
+    Place s;
     // Prefer the brand name; fall back to the POI display name.
     const char* brand = r["poi"]["brands"][0]["name"] | r["poi"]["name"] | "";
-    s.brand = brand;
+    s.name = brand;
     s.address = (const char*)(r["address"]["freeformAddress"] | "");
     s.lat = r["position"]["lat"] | 0.0;
     s.lng = r["position"]["lon"] | 0.0;
