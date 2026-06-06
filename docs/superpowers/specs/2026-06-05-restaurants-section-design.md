@@ -59,15 +59,24 @@ Delete the QR/detail code paths.
 
 ## 3. Data — Foursquare provider (restaurants)
 
-- **Request:** Foursquare Places Search around the GPS lat/lng, sorted by distance,
-  constrained to restaurant cuisine categories, `US`.
-- **Fields requested:** name, address, lat/lng, distance, `categories`, **`rating`**.
-  `rating` is a **Premium** field — requesting it makes the call billable
-  (~$18.75 / 1,000). This is accepted (est. ~$10–15 for the 7-day trip).
-- **Cuisine filter:** include Mediterranean / Greek / Peruvian / American-steakhouse
-  style; **exclude** fast-food and Mexican. Done via Foursquare category IDs in the
-  request where possible; exact IDs confirmed empirically (same approach used to
-  confirm TomTom `7311`).
+**Confirmed live 2026-06-05** (curl against the user's key):
+
+- **Endpoint:** `GET https://places-api.foursquare.com/places/search` (new platform).
+- **Auth headers:** `Authorization: Bearer <FSQ_API_KEY>`,
+  `X-Places-Api-Version: 2025-06-17` (required), `accept: application/json`.
+- **Request params:** `ll=<lat>,<lon>`, `radius`, `limit`, `fields=name,location,categories,rating`,
+  `fsq_category_ids=<comma-separated include IDs>`, `sort=DISTANCE`.
+- **Cuisine filter (server-side):** pass the include list as `fsq_category_ids` →
+  only those cuisines come back, so fast-food/Mexican are excluded by omission (no
+  client-side exclusion needed). The 11 confirmed IDs (Greek, Mediterranean,
+  Peruvian, Steakhouse, American, New American, Turkish, Meze, Italian, Salad, BBQ)
+  live in `config.h` as `FSQ_CATEGORIES`.
+- **`rating` is Premium → requires billing.** A call requesting `rating` on an
+  account with no credits returns **HTTP 429** (`no API credits remaining`). The
+  user is enabling billing on Foursquare; the plan assumes `rating` is available.
+  Cost est. ~$10–15 for the 7-day trip.
+- **Category IDs are hex strings** (e.g. Greek = `4bf58dd8d48988d10e941735`), not
+  integers — verified, not assumed.
 - **Quality filter:** keep `rating ≥ RESTAURANT_MIN_RATING` (default **8.6**/10 ≈
   4.3/5), filtered client-side. Restaurants with no `rating` are dropped.
 - **Ranking / heading:** reuse the existing geo layer — compute bearing locally and
@@ -116,13 +125,15 @@ behavior:
 
 ## 6. Verify during implementation (do not assume)
 
-- Foursquare current **host/endpoint** and **auth header** (Service Key / `Authorization`)
-  — the platform changed in 2024–25.
-- Exact Foursquare **category IDs** for the wanted cuisines, and that `rating` is
-  actually populated (may be absent for venues with few check-ins).
+- ✅ ~~Foursquare host/endpoint and auth header~~ — confirmed live (see §3).
+- ✅ ~~Foursquare category IDs~~ — confirmed live, stored in `config.h` (see §3).
+- **Billing must be enabled on Foursquare** before `rating` works (else HTTP 429).
+  Confirm a `rating`-bearing call returns 200 once billing is on.
+- That `rating` is actually **populated** per venue (may be absent for places with
+  few check-ins) — drop those.
 - Re-verify the **fuel path on-device** after the `Place`/`IPlaceProvider` refactor.
 - 🔑 Second API key lands in ESP32 flash (extractable) — same handling as the TomTom
-  key: Search-only scope, spend cap, never commit, rotate.
+  key: spend cap, never commit, rotate before/after the trip.
 
 ---
 
