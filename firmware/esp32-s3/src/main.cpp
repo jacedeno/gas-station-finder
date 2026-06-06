@@ -54,15 +54,28 @@ static void filterAndRank(std::vector<Place>& v, const GpsFix& fix) {
             [](const Place& a, const Place& b) { return a.distanceM < b.distanceM; });
 }
 
+// HTTPS queries can flake on the first call right after Wi-Fi associates (the
+// hotspot association is rocky -> the second back-to-back TLS handshake sometimes
+// fails). Retry a few times with a short settle delay before giving up.
+static bool queryWithRetry(IPlaceProvider& p, const GpsFix& fix,
+                           std::vector<Place>& out) {
+  for (int attempt = 1; attempt <= 3; ++attempt) {
+    if (p.getNearby(fix.lat, fix.lng, out)) return true;
+    Serial.printf("[app] %s query attempt %d failed\n", p.name(), attempt);
+    delay(400);
+  }
+  return false;
+}
+
 static void runQuery(const GpsFix& fix) {
   // Distance comes from each provider; bearing + filtering are computed locally.
   std::vector<Place> fuel, food;
-  if (!fuelProvider.getNearby(fix.lat, fix.lng, fuel)) {
+  if (!queryWithRetry(fuelProvider, fix, fuel)) {
     Serial.println("[app] fuel provider query failed.");
   }
-  // Food is best-effort: a failure (e.g. 429 before Foursquare billing is enabled)
-  // just leaves the restaurants section empty — the fuel half still works.
-  if (!foodProvider.getNearby(fix.lat, fix.lng, food)) {
+  // Food is best-effort: a persistent failure (e.g. 429 before billing) just leaves
+  // the restaurants section empty — the fuel half still works.
+  if (!queryWithRetry(foodProvider, fix, food)) {
     Serial.println("[app] food provider query failed -> empty restaurants section.");
   }
 

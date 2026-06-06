@@ -226,9 +226,9 @@ lv_obj_t *s_foodList = nullptr;
 lv_obj_t *s_status = nullptr;
 bool s_ready = false;
 
-// A titled section: a small label over a transparent flex-column card. Returns
-// the card (the list) so rows can be added to it. `y` = top of the label.
-lv_obj_t *makeSection(lv_obj_t *scr, const char *title, lv_coord_t y) {
+// A titled section: a small label over a transparent flex-column card of height
+// `h`. Returns the card (the list) so rows can be added to it. `y` = top of label.
+lv_obj_t *makeSection(lv_obj_t *scr, const char *title, lv_coord_t y, lv_coord_t h) {
   lv_obj_t *lbl = lv_label_create(scr);
   lv_label_set_text(lbl, title);
   lv_obj_set_style_text_color(lbl, lv_color_hex(0x4FC3F7), 0);
@@ -236,13 +236,13 @@ lv_obj_t *makeSection(lv_obj_t *scr, const char *title, lv_coord_t y) {
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 16, y);
 
   lv_obj_t *list = lv_obj_create(scr);
-  lv_obj_set_size(list, 452, 150);  // snug for 2 two-line rows
-  lv_obj_align(list, LV_ALIGN_TOP_MID, 0, y + 28);
+  lv_obj_set_size(list, 452, h);
+  lv_obj_align(list, LV_ALIGN_TOP_MID, 0, y + 24);
   lv_obj_set_style_bg_color(list, COL_CARD(), 0);
   lv_obj_set_style_border_width(list, 0, 0);
   lv_obj_set_style_radius(list, 8, 0);
-  lv_obj_set_style_pad_all(list, 8, 0);
-  lv_obj_set_style_pad_row(list, 10, 0);
+  lv_obj_set_style_pad_all(list, 6, 0);
+  lv_obj_set_style_pad_row(list, 4, 0);
   lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
   lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
   return list;
@@ -258,21 +258,22 @@ void buildBase() {
   lv_label_set_text(s_status, "Connecting...");
   lv_obj_set_style_text_color(s_status, COL_MUTED(), 0);
   lv_obj_set_style_text_font(s_status, &lv_font_montserrat_14, 0);
-  lv_obj_align(s_status, LV_ALIGN_TOP_LEFT, 16, 12);
+  lv_obj_align(s_status, LV_ALIGN_TOP_LEFT, 16, 8);
 
   lv_obj_t *logo = lv_img_create(scr);
   lv_img_set_src(logo, &gz_logo);
   lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -10, 6);
 
   // Two sections, each a plain flex-column card (no lv_list, no scrolling — there's
-  // no touch and you don't scroll while driving). Fuel on top, restaurants below.
-  s_fuelList = makeSection(scr, "GAS ahead", 40);
-  s_foodList = makeSection(scr, "EAT ahead   top rated", 222);
+  // no touch and you don't scroll while driving). Fuel on top (3 rows), restaurants
+  // below (4 rows). Heights sized to fill the panel with a small bottom margin.
+  s_fuelList = makeSection(scr, "GAS ahead", 32, 162);
+  s_foodList = makeSection(scr, "EAT ahead   top rated", 222, 216);
 }
 
-// How many rows per section. A driving glance wants the 2 nearest, not a scrollable
-// list (there's no touch to scroll anyway). The rest stay in the serial log.
-constexpr size_t MAX_ROWS = 2;
+// Rows shown per section are passed in per call (fuel and food differ). A driving
+// glance wants the few nearest, not a scrollable list (no touch anyway); the rest
+// stay in the serial log.
 
 // 8-point compass letter for a bearing — easier to read at a glance than degrees.
 const char *compass(double brg) {
@@ -291,12 +292,12 @@ void fmtDist(double m, char *out, size_t n) {
   else snprintf(out, n, "%.1f mi", r);
 }
 
-// Fill one section's card with up to MAX_ROWS rows. When `showRating` is true
+// Fill one section's card with up to `maxRows` rows. When `showRating` is true
 // (food) line 1 ends with the Foursquare rating and line 2 is the cuisine; for fuel
 // line 1 ends with the compass bearing and line 2 is the address. An empty list
 // shows `emptyMsg` instead.
 void fillList(lv_obj_t *list, const std::vector<Place> &items, bool showRating,
-              const char *emptyMsg) {
+              const char *emptyMsg, size_t maxRows) {
   lv_obj_clean(list);
 
   if (items.empty()) {
@@ -307,7 +308,7 @@ void fillList(lv_obj_t *list, const std::vector<Place> &items, bool showRating,
     return;
   }
 
-  const size_t shown = std::min(items.size(), MAX_ROWS);
+  const size_t shown = std::min(items.size(), maxRows);
   for (size_t i = 0; i < shown; ++i) {
     const Place &p = items[i];
     const lv_color_t col = (i == 0) ? COL_ACCENT() : COL_TEXT();
@@ -432,8 +433,8 @@ void showScreen(const std::vector<Place> &fuel, const std::vector<Place> &food) 
   }
   if (!s_ready) return;
 
-  fillList(s_fuelList, fuel, false, "No fuel ahead - searching...");
-  fillList(s_foodList, food, true, "No top-rated spots nearby");
+  fillList(s_fuelList, fuel, false, "No fuel ahead - searching...", 3);
+  fillList(s_foodList, food, true, "No top-rated spots nearby", 4);
 
   lv_label_set_text_fmt(s_status, "%u gas - %u eat ahead", (unsigned)fuel.size(),
                         (unsigned)food.size());

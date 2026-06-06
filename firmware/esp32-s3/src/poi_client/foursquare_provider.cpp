@@ -39,7 +39,9 @@ bool FoursquareProvider::getNearby(double lat, double lng, std::vector<Place>& o
   client.setInsecure();  // v1: skip cert validation (matches the TomTom path)
 
   HTTPClient https;
+  https.setTimeout(8000);  // give the TLS handshake + response room (default 5 s)
   if (!https.begin(client, url)) {
+    Serial.println("[fsq] begin() failed");
     return false;
   }
   https.addHeader("Authorization", "Bearer " + apiKey_);
@@ -73,6 +75,7 @@ bool FoursquareProvider::getNearby(double lat, double lng, std::vector<Place>& o
       deserializeJson(doc, https.getStream(), DeserializationOption::Filter(filter));
   https.end();
   if (err) {
+    Serial.printf("[fsq] parse error: %s\n", err.c_str());
     return false;
   }
 
