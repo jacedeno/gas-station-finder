@@ -262,7 +262,11 @@ void buildBase() {
 
   lv_obj_t *logo = lv_img_create(scr);
   lv_img_set_src(logo, &gz_logo);
-  lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -10, 6);
+  // Native 64x60 overlaps the gas card; shrink to ~62% and pivot at the top-right
+  // corner so it scales toward the corner, staying clear of the card below.
+  lv_img_set_pivot(logo, 64, 0);
+  lv_img_set_zoom(logo, 160);  // 256 = 100%; 160 ~= 62% -> ~40x37 px
+  lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -8, 8);
 
   // Two sections, each a plain flex-column card (no lv_list, no scrolling — there's
   // no touch and you don't scroll while driving). Fuel on top (3 rows), restaurants
