@@ -1,5 +1,6 @@
-// LVGL UI for the Indicator Fuel Finder — list view + geo: QR detail, on the real
-// ST7701S 480x480 RGB panel via esp_lcd.
+// LVGL UI for the Indicator Fuel Finder — split screen: nearest fuel (top) +
+// top-rated restaurants ahead (bottom), on the real ST7701S 480x480 RGB panel via
+// esp_lcd. (The per-station geo: QR was removed in favour of the restaurants section.)
 //
 // The display backend is the clean path ported from Seeed's ESP-IDF SDK and proven
 // in tools/esp32-esplcd-lvgl: an esp_lcd RGB panel with a DOUBLE framebuffer +
@@ -8,7 +9,7 @@
 // CS/RST on a PCA9535 I2C expander. All values are documented in
 // docs/hardware/display.md ("Port spec"). This replaces the old serial-log stub.
 //
-// Threading: every LVGL call here runs from loop() (begin/showStations/tick are all
+// Threading: every LVGL call here runs from loop() (begin/showScreen/tick are all
 // called from the single Arduino task). The only other task is lcdRefreshTask, which
 // touches esp_lcd but never LVGL — so LVGL stays single-threaded and lock-free.
 
@@ -220,69 +221,63 @@ inline lv_color_t COL_ACCENT() { return lv_color_hex(0x76B900); }  // GeekendZon
 inline lv_color_t COL_TEXT() { return lv_color_hex(0xE6E6E6); }
 inline lv_color_t COL_MUTED() { return lv_color_hex(0x9AA0A6); }
 
-lv_obj_t *s_list = nullptr;
+lv_obj_t *s_fuelList = nullptr;
+lv_obj_t *s_foodList = nullptr;
 lv_obj_t *s_status = nullptr;
-lv_obj_t *s_qr = nullptr;
-lv_obj_t *s_qrcap = nullptr;
 bool s_ready = false;
+
+// A titled section: a small label over a transparent flex-column card of height
+// `h`. Returns the card (the list) so rows can be added to it. `y` = top of label.
+lv_obj_t *makeSection(lv_obj_t *scr, const char *title, lv_coord_t y, lv_coord_t h) {
+  lv_obj_t *lbl = lv_label_create(scr);
+  lv_label_set_text(lbl, title);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(0x4FC3F7), 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, 0);
+  lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 16, y);
+
+  lv_obj_t *list = lv_obj_create(scr);
+  lv_obj_set_size(list, 452, h);
+  lv_obj_align(list, LV_ALIGN_TOP_MID, 0, y + 24);
+  lv_obj_set_style_bg_color(list, COL_CARD(), 0);
+  lv_obj_set_style_border_width(list, 0, 0);
+  lv_obj_set_style_radius(list, 8, 0);
+  lv_obj_set_style_pad_all(list, 6, 0);
+  lv_obj_set_style_pad_row(list, 4, 0);
+  lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+  return list;
+}
 
 void buildBase() {
   lv_obj_t *scr = lv_scr_act();
   lv_obj_set_style_bg_color(scr, COL_BG(), 0);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-  // Header (top-left).
-  lv_obj_t *title = lv_label_create(scr);
-  lv_label_set_text(title, "Fuel ahead");
-  lv_obj_set_style_text_color(title, lv_color_hex(0x4FC3F7), 0);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
-
-  // geekendzone.com logo (top-right).
-  lv_obj_t *logo = lv_img_create(scr);
-  lv_img_set_src(logo, &gz_logo);
-  lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -10, 6);
-
-  // Status line under the header.
+  // Status line (top-left) + geekendzone.com logo (top-right).
   s_status = lv_label_create(scr);
   lv_label_set_text(s_status, "Connecting...");
   lv_obj_set_style_text_color(s_status, COL_MUTED(), 0);
   lv_obj_set_style_text_font(s_status, &lv_font_montserrat_14, 0);
-  lv_obj_align(s_status, LV_ALIGN_TOP_LEFT, 16, 46);
+  lv_obj_align(s_status, LV_ALIGN_TOP_LEFT, 16, 8);
 
-  // Station list — a plain flex column (not lv_list) so each row can stack a big
-  // brand/distance line over a small address line, with no scrolling (there's no
-  // touch yet, and you don't scroll while driving).
-  s_list = lv_obj_create(scr);
-  lv_obj_set_size(s_list, 452, 238);  // snug for 5 two-line rows
-  lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, 66);
-  lv_obj_set_style_bg_color(s_list, COL_CARD(), 0);
-  lv_obj_set_style_border_width(s_list, 0, 0);
-  lv_obj_set_style_radius(s_list, 8, 0);
-  lv_obj_set_style_pad_all(s_list, 8, 0);
-  lv_obj_set_style_pad_row(s_list, 6, 0);
-  lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
-  lv_obj_clear_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *logo = lv_img_create(scr);
+  lv_img_set_src(logo, &gz_logo);
+  // Native 64x60 overlaps the gas card; shrink to ~62% and pivot at the top-right
+  // corner so it scales toward the corner, staying clear of the card below.
+  lv_img_set_pivot(logo, 64, 0);
+  lv_img_set_zoom(logo, 160);  // 256 = 100%; 160 ~= 62% -> ~40x37 px
+  lv_obj_align(logo, LV_ALIGN_TOP_RIGHT, -8, 8);
 
-  // geo: QR for the nearest station (passenger-scan UX), bottom-centre.
-  s_qr = lv_qrcode_create(scr, 104, lv_color_black(), lv_color_white());
-  lv_obj_set_style_border_color(s_qr, lv_color_white(), 0);
-  lv_obj_set_style_border_width(s_qr, 4, 0);
-  lv_obj_align(s_qr, LV_ALIGN_BOTTOM_MID, 0, -10);
-  lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
-
-  s_qrcap = lv_label_create(scr);
-  lv_label_set_text(s_qrcap, "Scan nearest for Maps / GasBuddy");
-  lv_obj_set_style_text_color(s_qrcap, COL_MUTED(), 0);
-  lv_obj_set_style_text_font(s_qrcap, &lv_font_montserrat_14, 0);
-  lv_obj_align(s_qrcap, LV_ALIGN_BOTTOM_MID, 0, -126);
-  lv_obj_add_flag(s_qrcap, LV_OBJ_FLAG_HIDDEN);
+  // Two sections, each a plain flex-column card (no lv_list, no scrolling — there's
+  // no touch and you don't scroll while driving). Fuel on top (3 rows), restaurants
+  // below (4 rows). Heights sized to fill the panel with a small bottom margin.
+  s_fuelList = makeSection(scr, "GAS ahead", 32, 162);
+  s_foodList = makeSection(scr, "EAT ahead   top rated", 222, 216);
 }
 
-// How many stations to show on-screen. A driving glance wants the few nearest ones,
-// not a scrollable list of ten (there's no touch to scroll anyway). The QR is the
-// nearest; the rest are in the serial log.
-constexpr size_t MAX_ROWS = 5;
+// Rows shown per section are passed in per call (fuel and food differ). A driving
+// glance wants the few nearest, not a scrollable list (no touch anyway); the rest
+// stay in the serial log.
 
 // 8-point compass letter for a bearing — easier to read at a glance than degrees.
 const char *compass(double brg) {
@@ -301,13 +296,79 @@ void fmtDist(double m, char *out, size_t n) {
   else snprintf(out, n, "%.1f mi", r);
 }
 
-// Point the QR at one station, encoding geo:lat,lng (opens Maps when scanned).
-void setQrTo(const Station &s) {
-  char geo[48];
-  snprintf(geo, sizeof(geo), "geo:%.5f,%.5f", s.lat, s.lng);
-  lv_qrcode_update(s_qr, geo, strlen(geo));
-  lv_obj_clear_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_clear_flag(s_qrcap, LV_OBJ_FLAG_HIDDEN);
+// Fill one section's card with up to `maxRows` rows. When `showRating` is true
+// (food) line 1 ends with the Foursquare rating and line 2 is the cuisine; for fuel
+// line 1 ends with the compass bearing and line 2 is the address. An empty list
+// shows `emptyMsg` instead.
+void fillList(lv_obj_t *list, const std::vector<Place> &items, bool showRating,
+              const char *emptyMsg, size_t maxRows) {
+  lv_obj_clean(list);
+
+  if (items.empty()) {
+    lv_obj_t *empty = lv_label_create(list);
+    lv_label_set_text(empty, emptyMsg);
+    lv_obj_set_style_text_font(empty, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(empty, COL_MUTED(), 0);
+    return;
+  }
+
+  const size_t shown = std::min(items.size(), maxRows);
+  for (size_t i = 0; i < shown; ++i) {
+    const Place &p = items[i];
+    const lv_color_t col = (i == 0) ? COL_ACCENT() : COL_TEXT();
+
+    lv_obj_t *row = lv_obj_create(list);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    lv_obj_set_style_pad_row(row, 2, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Line 1: name (left, grows + ellipsises) and meta (right).
+    lv_obj_t *top = lv_obj_create(row);
+    lv_obj_set_width(top, lv_pct(100));
+    lv_obj_set_height(top, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(top, 0, 0);
+    lv_obj_set_style_pad_all(top, 0, 0);
+    lv_obj_set_flex_flow(top, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(top, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *nameLbl = lv_label_create(top);
+    lv_label_set_text(nameLbl, p.name.c_str());
+    lv_obj_set_style_text_font(nameLbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(nameLbl, col, 0);
+    lv_label_set_long_mode(nameLbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_flex_grow(nameLbl, 1);
+
+    char dist[16];
+    fmtDist(p.distanceM, dist, sizeof(dist));
+    char meta[40];
+    if (showRating) {
+      snprintf(meta, sizeof(meta), "%s  %.1f", dist, p.rating);
+    } else {
+      snprintf(meta, sizeof(meta), "%s  %s", dist, compass(p.bearingDeg));
+    }
+    lv_obj_t *metaLbl = lv_label_create(top);
+    lv_label_set_text(metaLbl, meta);
+    lv_obj_set_style_text_font(metaLbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(metaLbl, col, 0);
+    lv_obj_set_style_pad_left(metaLbl, 8, 0);
+
+    // Line 2 (muted): cuisine for food (fall back to address), address for fuel.
+    const String &sub = (showRating && p.category.length()) ? p.category : p.address;
+    lv_obj_t *l2 = lv_label_create(row);
+    lv_label_set_text(l2, sub.c_str());
+    lv_obj_set_style_text_font(l2, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(l2, COL_MUTED(), 0);
+    lv_label_set_long_mode(l2, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l2, lv_pct(100));
+  }
 }
 
 }  // namespace
@@ -360,72 +421,27 @@ void setStatus(const char *msg) {
   if (s_ready) lv_label_set_text(s_status, msg);
 }
 
-void showStations(const std::vector<Station> &stations) {
+void showScreen(const std::vector<Place> &fuel, const std::vector<Place> &food) {
   // Keep logging too — handy on serial while driving.
-  Serial.printf("[ui] %u station(s):\n", (unsigned)stations.size());
-  for (size_t i = 0; i < stations.size(); ++i) {
-    const Station &s = stations[i];
-    Serial.printf("  %u. %-12s %6.0f m  brg %3.0f  %s\n", (unsigned)(i + 1),
-                  s.brand.c_str(), s.distanceM, s.bearingDeg, s.address.c_str());
+  Serial.printf("[ui] %u fuel, %u food:\n", (unsigned)fuel.size(),
+                (unsigned)food.size());
+  for (size_t i = 0; i < fuel.size(); ++i) {
+    const Place &s = fuel[i];
+    Serial.printf("  GAS %u. %-12s %6.0f m  brg %3.0f  %s\n", (unsigned)(i + 1),
+                  s.name.c_str(), s.distanceM, s.bearingDeg, s.address.c_str());
+  }
+  for (size_t i = 0; i < food.size(); ++i) {
+    const Place &s = food[i];
+    Serial.printf("  EAT %u. %-18s %6.0f m  %.1f*  %s\n", (unsigned)(i + 1),
+                  s.name.c_str(), s.distanceM, s.rating, s.category.c_str());
   }
   if (!s_ready) return;
 
-  lv_obj_clean(s_list);  // drop the previous result's rows
+  fillList(s_fuelList, fuel, false, "No fuel ahead - searching...", 3);
+  fillList(s_foodList, food, true, "No top-rated spots nearby", 4);
 
-  if (stations.empty()) {
-    lv_label_set_text(s_status, "No fuel ahead - searching...");
-    lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_qrcap, LV_OBJ_FLAG_HIDDEN);
-    return;
-  }
-
-  const size_t shown = std::min(stations.size(), MAX_ROWS);
-  if (stations.size() > shown) {
-    lv_label_set_text_fmt(s_status, "%u ahead  (showing nearest %u)",
-                          (unsigned)stations.size(), (unsigned)shown);
-  } else {
-    lv_label_set_text_fmt(s_status, "%u ahead", (unsigned)stations.size());
-  }
-
-  for (size_t i = 0; i < shown; ++i) {
-    const Station &s = stations[i];
-
-    // One row = brand/distance/direction (big) over the full address (small, muted).
-    lv_obj_t *row = lv_obj_create(s_list);
-    lv_obj_set_width(row, lv_pct(100));
-    lv_obj_set_height(row, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_all(row, 0, 0);
-    lv_obj_set_style_pad_row(row, 0, 0);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-
-    char dist[16];
-    fmtDist(s.distanceM, dist, sizeof(dist));
-    char head[64];
-    snprintf(head, sizeof(head), "%-9s  %8s  %2s", s.brand.c_str(), dist,
-             compass(s.bearingDeg));
-    lv_obj_t *l1 = lv_label_create(row);
-    lv_label_set_text(l1, head);
-    lv_obj_set_style_text_font(l1, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(l1, i == 0 ? COL_ACCENT() : COL_TEXT(), 0);
-
-    lv_obj_t *l2 = lv_label_create(row);
-    lv_label_set_text(l2, s.address.c_str());
-    lv_obj_set_style_text_font(l2, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(l2, COL_MUTED(), 0);
-    lv_label_set_long_mode(l2, LV_LABEL_LONG_DOT);  // truncate over-long addresses
-    lv_obj_set_width(l2, lv_pct(100));
-  }
-
-  setQrTo(stations.front());  // QR = the nearest one
-}
-
-void showDetail(const Station &s) {
-  Serial.printf("[ui] detail: %s | %s | geo:%.6f,%.6f\n", s.brand.c_str(),
-                s.address.c_str(), s.lat, s.lng);
-  if (s_ready) setQrTo(s);
+  lv_label_set_text_fmt(s_status, "%u gas - %u eat ahead", (unsigned)fuel.size(),
+                        (unsigned)food.size());
 }
 
 void tick() {

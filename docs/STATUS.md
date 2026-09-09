@@ -2,6 +2,16 @@
 
 _Snapshot: 2026-06-04. Resume point for the next session._
 
+> **Update 2026-06-05 (branch `feature/restaurants-foursquare`):** the per-station
+> **QR was dropped** (judged not useful) and replaced by a **restaurants section**.
+> The screen is now a 50/50 split — 2 nearest-ahead **fuel** (TomTom) on top, 2
+> **top-rated restaurants ahead** (Foursquare Premium, `rating ≥ 8.6`, cuisine-
+> filtered) below. Provider layer generalised (`Station`→`Place`,
+> `IFuelProvider`→`IPlaceProvider`). Builds clean; geo tests pass. **Pending:**
+> on-device verification, and Foursquare **billing must be active** for ratings
+> (credits were purchased — see `docs/foursquare-refund-claim.md` re: a duplicate
+> charge). Design spec: `docs/superpowers/specs/2026-06-05-restaurants-section-design.md`.
+
 ## Where we are
 
 The core of the Fuel Finder works end-to-end, **and the display is now clean** — the
