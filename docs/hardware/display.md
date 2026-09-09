@@ -102,6 +102,45 @@ Extracted from Seeed's ESP-IDF SDK (`Seeed-Solution/SenseCAP_Indicator_ESP32`):
   - Pixel format `0x3A = 0x60` (RGB666); `0x21` display-inversion on.
   A verbatim translation is in `tools/esp32-lvgl-test` as `st7701_indicator_init`.
 
+### Port spec — authoritative values extracted from the Seeed SDK (2026-06-04)
+
+Pulled verbatim from `Seeed-Solution/SenseCAP_Indicator_ESP32` so we never re-derive
+them. This is what `tools/esp32-esplcd-lvgl/` implements (the clean esp_lcd path).
+
+**esp_lcd RGB panel** (`peripherals/bsp_lcd.c`, the `LCD_AVOID_TEAR` branch):
+- `data_width = 16`, `bits_per_pixel = 16`, `clk_src = PLL160M`.
+- `flags.fb_in_psram = 1`, **`num_fbs = 2` (double FB)**, **`flags.refresh_on_demand = 1`**.
+  **No bounce buffer** (that was the Arduino_GFX crutch; esp_lcd doesn't need it here).
+- Register an `on_vsync` callback that gives two binary semaphores (`trans_ready`,
+  `flush_ready`) from ISR.
+- A dedicated `lcd_task`: `take(trans_ready)` → `vTaskDelayUntil(CONFIG_LCD_TASK_REFRESH_TIME)`
+  → `esp_lcd_rgb_panel_refresh()` → `take(flush_ready, 0)`. `LCD_TASK_REFRESH_TIME = 40 ms`,
+  task priority 5.
+- Pins (RGB bus): HSYNC=16, VSYNC=17, DE=18, PCLK=21, DISP_EN=NC, BL=45 (active-high).
+  Data (`data_gpio_nums[0..15]` = **B0..B4, G0..G5, R0..R4**): 15,14,13,12,11,
+  10,9,8,7,6,5, 4,3,2,1,0.
+- Timings: `pclk_hz = 18 MHz`, h_res=v_res=480, HBP=50, HFP=10, HPW=8, VBP=20,
+  VFP=10, VPW=8, `flags.pclk_active_neg = 0`.
+
+**LVGL wiring** (`examples/lvgl_demos/main/lv_port.c`, `LCD_LVGL_FULL_REFRESH`):
+- The **two esp_lcd framebuffers are LVGL's two draw buffers**
+  (`esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &buf0, &buf1)`), each `W*H` px.
+- `disp_drv.full_refresh = 1`.
+- `flush_cb` → `esp_lcd_panel_draw_bitmap(panel, x1,y1,x2+1,y2+1, color_p)` (full-frame
+  swap; draw_bitmap handles the PSRAM cache writeback) → `take(flush_ready)` (wait one
+  vsync) → `lv_disp_flush_ready()`. No software rotation (orientation is in the init).
+
+**ST7701S init via the PCA9535** (`boards/lcd_panel_config.c::lcd_panel_st7701s_init`):
+- 3-wire 9-bit SPI bit-banged: **CS = expander P04, RST = expander P05** (I²C @ SDA39/SCL40,
+  addr `0x20`); **CLK = GPIO41, MOSI/SDA = GPIO48** (real GPIOs). 9-bit frame = 1 D/C bit
+  (0=cmd, 1=data) + 8 data bits, MSB first, sampled on the rising edge.
+- Sequence (BK0 → BK1 → gamma → `0x36=0x10` MADCTL → `0x3A=0x60` RGB666 → `0x21` inversion
+  → `0x11` sleep-out → `0x29` display-on). Orientation (180°) is **fully in hardware**
+  here (`0x36`/`0xC7`), so LVGL/esp_lcd use no rotation. Transcribed in
+  `tools/esp32-esplcd-lvgl/src/main.cpp`.
+- **Order:** PCA9535 RST pulse → run the SPI register init → *then* create/init the
+  esp_lcd RGB panel → backlight on. (Configure panel registers before streaming RGB.)
+
 ### Why Arduino_GFX struggled (architecture)
 
 Arduino_GFX's `Arduino_ESP32RGBPanel` hardcodes `num_fbs = 1` and offers only a bounce
@@ -112,22 +151,49 @@ draw buffers = the two FBs, the standard Espressif "avoid tearing" pattern), kee
 PCA9535 CS/RST init. That is the clean path; the Arduino_GFX route in `esp32-lvgl-test`
 was a dead-end for a tear-free UI.
 
-## Remaining bring-up (LVGL) — WORK IN PROGRESS
+## Bring-up status — LVGL is clean via the esp_lcd port ✅ (2026-06-04)
 
-1. ✅ PCA9535 CS/RST + ST7701S init + RGB panel + bounce buffer — done. Direct
-   `gfx->fillScreen()` colour fills are clean and sharp.
-2. ⚠️ LVGL 8.4 renders on the panel (`tools/esp32-lvgl-test`, `lv_qrcode` works) but
-   output is **blurry / not yet clean**, and the 180° orientation vs sharpness is
-   unresolved. The panel is fine (direct fills are sharp), so it's the LVGL→framebuffer
-   path. See that tool's README for the full matrix of what was tried.
-   - **Most promising fix (researched, not yet working):** do the 180° flip in the
-     ST7701 init in HARDWARE — flip BOTH source (`0xC7` SDIR) and gate (`0xC0` scan
-     direction) — and set Arduino_GFX `rotation=0`. Software rotation smears partial
-     flushes (the likely blur). Best reference: port the Seeed ESP-IDF
-     `SenseCAP_Indicator_ESP32` `lv_port` + ST7701 init verbatim, or Arduino_GFX
-     discussion #334.
-3. Then wire FT5x06 touch (`indev`) and replace the `ui/` serial-log stub with the real
-   list + QR-detail screens.
+1. ✅ ST7701S init + RGB panel — clean, sharp direct framebuffer fills.
+2. ✅ **LVGL is now sharp & stable.** The blur was the Arduino_GFX single-fb + bounce
+   buffer architecture, not the panel. Fixed by porting Seeed's esp_lcd path (the **Port
+   spec** above): `num_fbs=2` double framebuffer + `refresh_on_demand` + `on_vsync`, the
+   two framebuffers wired as LVGL's two draw buffers (`full_refresh=1`), flush = zero-copy
+   `draw_bitmap` swap synced to vsync. Orientation is baked into the ST7701 init
+   (`0x36=0x10`/`0xC7=0x04`), so **no software rotation**. Implemented + verified on-device
+   in **`tools/esp32-esplcd-lvgl/`** (R/G/B fills sharp/correct; mock UI + `lv_qrcode`
+   sharp/stable). The Arduino_GFX route (`tools/esp32-lvgl-test`) is the documented
+   dead-end.
+3. ⏭️ Next: wire FT5x06 touch (`indev`) and fold the panel/LVGL setup + the list +
+   QR-detail screens into the app's `ui/` module (see `docs/STATUS.md`).
+
+## Wi-Fi + the RGB panel (PSRAM bus contention) — fixed 2026-06-04
+
+When the app turned Wi-Fi on, the panel degraded to "bad-TV" noise, then (after
+mitigation) a residual flicker. **Root cause:** the RGB panel streams its framebuffer
+from PSRAM, and on the ESP32-S3 **PSRAM and flash share one SPI bus**. Wi-Fi/TLS traffic
+saturates PSRAM bandwidth, and — worse — any **flash/NVS write locks the whole bus**,
+stalling the panel's data path (Espressif RGB-LCD FAQ; arduino-esp32 discussion #12339,
+"tearing when writing NVS").
+
+Seeed's own firmware avoids this by running **PSRAM at 120 MHz** (`CONFIG_SPIRAM_SPEED_120M`
+in their app `sdkconfig.defaults`). That needs an ESP-IDF rebuild with experimental
+features and is **not reachable on the precompiled arduino-esp32 core** (arduino-esp32
+#9351). So we use the precompiled-core-friendly mitigations instead:
+
+- **Bounce buffer** (`bounce_buffer_size_px = h_res * 20`) — the esp_lcd-documented fix:
+  the driver DMAs framebuffer lines into small internal-SRAM buffers ahead of scanout, so
+  a busy PSRAM bus no longer starves the panel. Requires the panel to free-run, so
+  `refresh_on_demand` is OFF (no manual refresh task). Kept `num_fbs=2` for tear-free.
+- **`WiFi.persistent(false)`** — stops Wi-Fi writing credentials to NVS/flash on every
+  connect (the #1 flicker trigger — those writes lock the shared bus).
+- **`WiFi.setSleep(false)`** — steady modem, no periodic wake bursts.
+- **PCLK 18 → 16 MHz** — a little less scanout bandwidth = more headroom for the bounce
+  refill under contention. ~56 Hz, still flicker-free.
+
+Result (verified on-device): clean, **no flicker** with Wi-Fi up + a live TomTom query.
+If a future build needs heavy/constant Wi-Fi throughput and flicker returns, the robust
+fallback is **Wi-Fi on-demand** (connect → query → disconnect; the panel is rock-solid
+with the radio off, and queries are only every few km).
 
 ## Sources
 
